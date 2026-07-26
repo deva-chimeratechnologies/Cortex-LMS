@@ -6,7 +6,8 @@ import {
   logCheating, 
   evaluateAssessment, 
   getUserAssessments,
-  terminateAssessment
+  terminateAssessment,
+  analyzePersona
 } from '../controllers/assessment.controller.js';
 import { protect } from '../middleware/auth.middleware.js';
 import { 
@@ -20,6 +21,7 @@ const router = express.Router();
 router.use(protect); // Protect all routes below
 
 router.post('/start', validateStartAssessment, startAssessment);
+router.post('/analyze-persona', analyzePersona);
 router.get('/history', getUserAssessments);
 router.get('/:id/question', getCurrentQuestion);
 router.post('/:id/answer', validateSubmitAnswer, submitAnswer);

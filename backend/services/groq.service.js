@@ -1,5 +1,6 @@
 import '../config/env.js';
 import { OpenAI } from 'openai';
+import { generateDifyQuestions } from './dify.service.js';
 
 const apiKey = process.env.GROQ_API_KEY;
 let groq = null;
@@ -17,7 +18,8 @@ if (apiKey) {
 // Helper to generate mock questions if no API key is provided
 const generateMockQuestions = (profile) => {
   const { jobRole, certificationLevel, skills } = profile;
-  const mockTopics = skills.length > 0 ? skills : ['Core Concepts', 'Best Practices', 'System Design'];
+  const skillsArray = Array.isArray(skills) ? skills : (typeof skills === 'string' ? skills.split(',').map(s => s.trim()) : []);
+  const mockTopics = skillsArray.length > 0 ? skillsArray : ['Core Concepts', 'Best Practices', 'System Design'];
 
   const questionTypes = ['MCQ', 'MSQ', 'Short', 'Long', 'Scenario', 'Logical', 'Analytical'];
   const questions = [];
@@ -85,26 +87,239 @@ const generateMockQuestions = (profile) => {
   return questions;
 };
 
-// Generates personalized questions based on profile details using Groq Llama 3
-export const generateQuestions = async (profile) => {
+// Shuffles an array randomly
+const shuffleArray = (array) => {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+};
+
+// Synthesize a structured Markdown Persona from raw candidate profile onboarding fields
+export const synthesizeMarkdownPersona = async (profile) => {
   if (!groq) {
-    console.log('Using Mock Question Generator.');
-    return generateMockQuestions(profile);
+    console.log('Using Mock Persona Builder.');
+    return `Professional Summary:
+Software Engineer with ${profile.experience || 4} years of experience in backend development.
+
+Current Role:
+${profile.jobRole || 'Software Engineer'}
+
+Experience:
+${profile.experience || 4} Years
+
+Technical Skills:
+${Array.isArray(profile.skills) ? profile.skills.join('\n') : (profile.skills || 'Java\nSpring Boot\nDocker\nGit')}
+
+Responsibilities:
+- Build backend APIs
+- Integrate AI services
+- Deploy production services
+
+Projects:
+- AI document search
+- Enterprise chatbot
+
+AI Experience:
+${profile.aiExperience || 'Intermediate'}
+
+Cloud Experience:
+${profile.cloudExperience || 'AWS'}
+
+Deployment Experience:
+${profile.deploymentExperience || 'Production Kubernetes'}
+
+Architecture Experience:
+${profile.architectureExperience || 'Microservices'}
+
+Security Experience:
+${profile.securityExperience || 'OAuth2'}
+
+Cortex Experience:
+${profile.cortexExperience || 'Intermediate'}`;
   }
 
   try {
     const prompt = `
-      You are an elite technical assessment agent. Your goal is to generate exactly 20 challenging questions for a certification candidate with the following profile:
-      - Full Name: ${profile.name}
-      - Job Role: ${profile.jobRole}
-      - Experience: ${profile.experience} years
-      - Core Skills: ${profile.skills.join(', ')}
-      - Target Certification Level: ${profile.certificationLevel}
+      You are an expert HR assistant. Given a candidate's raw profile details, synthesize them into a clean, structured Markdown text block.
+      Do not add any JSON format or conversational headers. Output ONLY the text headers and values exactly like the target format below.
+
+      Raw Candidate Data:
+      - Job Role / Current Role: ${profile.jobRole}
+      - Years of Experience: ${profile.experience}
+      - Skills: ${Array.isArray(profile.skills) ? profile.skills.join(', ') : profile.skills}
+      - Projects / Use Cases: ${profile.projects || profile.useCases || 'General backend development'}
+      - Core Responsibilities: ${profile.responsibility || profile.jobRole}
+      - AI Experience Level: ${profile.aiExperience || 'Intermediate'}
+      - Cortex Experience Level: ${profile.cortexExperience || 'Intermediate'}
+      - Cloud Experience: ${profile.cloudExperience || 'AWS'}
+      - Deployment Experience: ${profile.deploymentExperience || 'Production Kubernetes'}
+      - Architecture Experience: ${profile.architectureExperience || 'Microservices'}
+      - Security Experience: ${profile.securityExperience || 'OAuth2 / JWT'}
+
+      Target Format (output only this with actual content):
+      Professional Summary:
+      <1-2 sentence professional summary of experience and role>
+
+      Current Role:
+      <Role>
+
+      Experience:
+      <Years> Years
+
+      Technical Skills:
+      <list of technical skills, one per line>
+
+      Responsibilities:
+      <bullet points of main responsibilities>
+
+      Projects:
+      <bullet points of key projects>
+
+      AI Experience:
+      <Beginner / Intermediate / Advanced>
+
+      Cloud Experience:
+      <AWS / GCP / Azure / etc. (infer from skills or default to AWS)>
+
+      Deployment Experience:
+      <Docker / Kubernetes / Serverless / etc. (infer from skills)>
+
+      Architecture Experience:
+      <Microservices / Monolith / Serverless / etc. (infer from skills)>
+
+      Security Experience:
+      <OAuth2 / JWT / etc. (infer from skills)>
+
+      Cortex Experience:
+      <Beginner / Intermediate / Advanced>
+    `;
+
+    const response = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.3,
+    });
+
+    return response.choices[0].message.content.trim();
+  } catch (error) {
+    console.error('Error synthesizing markdown persona:', error);
+    return `Professional Summary:
+Software Engineer with ${profile.experience} years of experience.
+
+Current Role:
+${profile.jobRole}
+
+Experience:
+${profile.experience} Years
+
+Technical Skills:
+${Array.isArray(profile.skills) ? profile.skills.join('\n') : profile.skills}
+
+Responsibilities:
+- Build backend applications and APIs
+
+Projects:
+- Core development
+
+AI Experience:
+Intermediate
+
+Cortex Experience:
+Intermediate`;
+  }
+};
+
+// Determine the target Job Role and Certification Level dynamically from conversational onboarding details
+export const determinePersonaRoleAndLevel = async (rawProfile) => {
+  if (!groq) {
+    const exp = Number(rawProfile.experience) || 0;
+    let jobRole = 'Developer';
+    const focus = (rawProfile.jobRoleFocus || '').toLowerCase();
+    if (focus.includes('architect') || focus.includes('design') || focus.includes('scaling')) {
+      jobRole = 'Architect';
+    } else if (focus.includes('lead') || focus.includes('manager') || focus.includes('manage') || focus.includes('head')) {
+      jobRole = 'Lead';
+    }
+
+    let certificationLevel = 'Intermediate';
+    if (exp >= 5) certificationLevel = 'Advanced';
+    else if (exp < 2) certificationLevel = 'Beginner';
+
+    return { jobRole, certificationLevel };
+  }
+
+  try {
+    const prompt = `
+      You are an expert technical talent assessor. Given a candidate's background details from a chat conversation, determine their closest target Role Persona and Certification Level.
+
+      Target Role Personas:
+      - "Developer": Focuses on writing code, debugging, APIs, implementation.
+      - "Architect": Focuses on system design, microservices, scaling, databases, security, integration.
+      - "Lead": Focuses on team standards, reviews, troubleshooting, workflows, project management.
+
+      Target Certification Levels:
+      - "Beginner": Basic knowledge, simple scripting, low experience (0-2 years).
+      - "Intermediate": Practical feature development, standard workflows, mid experience (2-5 years).
+      - "Advanced": Enterprise systems, advanced scaling/concurrency, high experience (5+ years).
+
+      Candidate Information:
+      - Role/Focus description: ${rawProfile.jobRoleFocus}
+      - Experience in years: ${rawProfile.experience}
+      - Technical skills: ${rawProfile.skills}
+      - Projects & Responsibilities: ${rawProfile.projects}
+      - AI/Cortex experience: ${rawProfile.aiExperience}
+
+      Return ONLY a JSON object of this structure, with no formatting or other text:
+      {
+        "jobRole": "Developer" | "Architect" | "Lead",
+        "certificationLevel": "Beginner" | "Intermediate" | "Advanced"
+      }
+    `;
+
+    const response = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      temperature: 0.2,
+    });
+
+    const result = JSON.parse(response.choices[0].message.content.trim());
+    return {
+      jobRole: ['Developer', 'Architect', 'Lead'].includes(result.jobRole) ? result.jobRole : 'Developer',
+      certificationLevel: ['Beginner', 'Intermediate', 'Advanced'].includes(result.certificationLevel) ? result.certificationLevel : 'Intermediate'
+    };
+  } catch (error) {
+    console.error('Error determining persona role and level:', error);
+    const exp = Number(rawProfile.experience) || 0;
+    const expLvl = exp >= 5 ? 'Advanced' : (exp >= 2 ? 'Intermediate' : 'Beginner');
+    return { jobRole: 'Developer', certificationLevel: expLvl };
+  }
+};
+
+// Generates general experience questions (excluding Cortex specifics) using Groq
+export const generateGroqQuestions = async (profile, personaMarkdown, count) => {
+  if (!groq) {
+    const mockAll = generateMockQuestions(profile);
+    const questions = [];
+    for (let i = 0; i < count; i++) {
+      questions.push({ ...mockAll[i % mockAll.length], topic: 'General Role Competency' });
+    }
+    return questions;
+  }
+
+  try {
+    const prompt = `
+      You are an elite technical assessment agent. Your goal is to generate exactly ${count} challenging questions for a candidate with the following persona profile:
+      
+      ${personaMarkdown}
 
       Rules for generation:
-      1. Difficulty MUST strictly match the certification level (${profile.certificationLevel}).
-      2. Make sure all the questions generated are always unique and not repeated.
-      3. The distribution should be dynamic: generate a mix of MCQ, MSQ, Short (Short Answer), Long (Long Answer), Scenario (Scenario Based), Logical (Logical Reasoning), and Analytical (Analytical Thinking) questions.
+      1. Difficulty MUST strictly match the candidate's competency level.
+      2. The distribution should be dynamic: generate a mix of MCQ, MSQ, Short (Short Answer), Long (Long Answer), Scenario (Scenario Based), Logical (Logical Reasoning), and Analytical (Analytical Thinking) questions.
+      3. Focus on general backend, software engineering, deployment, cloud, architecture, and security concepts relevant to the candidate's skills and role, but do NOT ask about Cortex features or Cortex APIs (as those are covered elsewhere).
       4. For MCQ and MSQ questions, include an array of options (exactly 4 options).
       5. Provide a 'correctAnswer' containing the exact correct option string (for MCQ), an array of correct option strings (for MSQ), or a model rubric/ideal answer (for Short, Long, Scenario, Logical, Analytical).
       6. timerDuration MUST be in seconds matching the requirements:
@@ -115,7 +330,7 @@ export const generateQuestions = async (profile) => {
          - Scenario: 240
          - Logical: 120
          - Analytical: 120
-      7. Provide a relevant 'topic' for each question (e.g. "Caching", "State Management", "Concurrency").
+      7. Provide a relevant general 'topic' for each question (e.g. "Distributed Systems", "SQL Databases", "Security", "CI/CD").
       
       Return ONLY a JSON object of this structure:
       {
@@ -140,12 +355,60 @@ export const generateQuestions = async (profile) => {
     });
 
     const data = JSON.parse(response.choices[0].message.content);
-
-    // Add sorting order field
-    return data.questions.map((q, idx) => ({ ...q, order: idx + 1 }));
+    return data.questions || [];
   } catch (error) {
-    console.error('Error generating questions from Groq API:', error);
-    console.log('Falling back to Mock Question Generator.');
+    console.error('Error generating Groq questions:', error);
+    // Fallback to generating mock questions for the remaining balance to guarantee 20 questions
+    const mockAll = generateMockQuestions(profile);
+    const questions = [];
+    for (let i = 0; i < count; i++) {
+      questions.push({ ...mockAll[i % mockAll.length], topic: 'General Role Competency' });
+    }
+    return questions;
+  }
+};
+
+// Orchestrates the 70-30 question split using Dify (70% Cortex docs) and Groq (30% persona experience)
+export const generateQuestions = async (profile) => {
+  try {
+    // 1. Synthesize a clean Markdown Persona from onboarding fields
+    console.log('Synthesizing candidate profile into Markdown Persona...');
+    const personaMarkdown = await synthesizeMarkdownPersona(profile);
+    console.log('Synthesized Persona:\n', personaMarkdown);
+
+    // 2. Fetch Dify questions (Target: 14 questions / 70% of 20)
+    const difyTargetCount = 14;
+    let questionsList = [];
+
+    console.log('Fetching questions from Dify Knowledge Base...');
+    const difyQuestions = await generateDifyQuestions(personaMarkdown, difyTargetCount);
+    const difyCount = difyQuestions.length;
+    questionsList = [...difyQuestions];
+
+    // 3. Generate the remaining balance from Groq (30%)
+    const targetTotal = 20;
+    const balanceCount = Math.max(0, targetTotal - difyCount);
+
+    if (balanceCount > 0) {
+      console.log(`Generating remaining balance of ${balanceCount} questions from Groq...`);
+      const groqQuestions = await generateGroqQuestions(profile, personaMarkdown, balanceCount);
+      questionsList = [...questionsList, ...groqQuestions];
+    }
+
+    // 4. Fallback if the list is still empty (e.g. both services failed)
+    if (questionsList.length === 0) {
+      console.log('Both generation paths failed. Generating mock questions.');
+      return generateMockQuestions(profile);
+    }
+
+    // 5. Shuffle the combined list to mix Dify & Groq questions
+    console.log(`Merging and shuffling total of ${questionsList.length} questions.`);
+    const shuffledQuestions = shuffleArray(questionsList);
+
+    // 6. Map sorting order field
+    return shuffledQuestions.map((q, idx) => ({ ...q, order: idx + 1 }));
+  } catch (error) {
+    console.error('Critical error in generateQuestions orchestrator:', error);
     return generateMockQuestions(profile);
   }
 };

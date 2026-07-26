@@ -20,18 +20,20 @@ const AssessmentPage = () => {
   const [inputVal, setInputVal] = useState('');
 
   // Profile collection state variables
-  const [profileStep, setProfileStep] = useState('useCases');
+  const [profileStep, setProfileStep] = useState('jobRole');
   const [profile, setProfile] = useState({
     name: user?.name || '',
     employeeId: user?.employeeId || '',
     department: user?.department || 'Engineering',
-    useCases: '',
-    projectsCount: '',
+    jobRoleFocus: '',
     experience: '',
-    responsibility: '',
     skills: Array.isArray(user?.skills) ? user.skills.join(', ') : (user?.skills || ''),
+    projects: '',
+    aiExperience: '',
+    jobRole: '',
     certificationLevel: '',
   });
+  const [isStartingExam, setIsStartingExam] = useState(false);
 
 
 
@@ -125,7 +127,7 @@ const AssessmentPage = () => {
       setMessages([
         {
           sender: 'ai',
-          text: `Hello! I am your AI Assessment Agent. I will configure your persona to generate a custom certification assessment for you.\n\nFirst, what are your primary Use Cases or target domains? (e.g. LLM integration, Fullstack development, Web automation):`,
+          text: `Hello! I am your AI Assessment Agent. I will configure your persona to generate a custom certification assessment for you.\n\nFirst, describe your daily focus or role. (e.g., Do you write code, design system architectures, or lead developer teams?):`,
         },
       ]);
       setIsAgentTyping(false);
@@ -241,7 +243,7 @@ const AssessmentPage = () => {
   };
 
   // Profile input step handler
-  const handleProfileInputSubmit = (value) => {
+  const handleProfileInputSubmit = async (value) => {
     if (!value.trim()) return;
 
     // Append candidate message
@@ -250,23 +252,8 @@ const AssessmentPage = () => {
 
     // Advance states
     switch (profileStep) {
-      case 'useCases':
-        setProfile((prev) => ({ ...prev, useCases: value }));
-        setProfileStep('projectsCount');
-        setIsAgentTyping(true);
-        setTimeout(() => {
-          appendAiMessage('How many projects have you built or deployed?');
-          setIsAgentTyping(false);
-          setInputVal('');
-        }, 600);
-        break;
-
-      case 'projectsCount':
-        if (isNaN(value) || Number(value) < 0) {
-          appendAiMessage('Please enter a valid numeric value for the number of projects.');
-          return;
-        }
-        setProfile((prev) => ({ ...prev, projectsCount: Number(value) }));
+      case 'jobRole':
+        setProfile((prev) => ({ ...prev, jobRoleFocus: value }));
         setProfileStep('experience');
         setIsAgentTyping(true);
         setTimeout(() => {
@@ -282,82 +269,109 @@ const AssessmentPage = () => {
           return;
         }
         setProfile((prev) => ({ ...prev, experience: Number(value) }));
-        setProfileStep('responsibility');
+        setProfileStep('skills');
         setIsAgentTyping(true);
         setTimeout(() => {
-          appendAiMessage('Describe your core Roles and Responsibilities in your projects/team:');
+          appendAiMessage('What core technical skills and tools do you use regularly? (comma separated, e.g. Java, Python, Docker, Kubernetes, Git):');
           setIsAgentTyping(false);
           setInputVal('');
         }, 600);
         break;
 
-      case 'responsibility':
-        setProfile((prev) => ({ ...prev, responsibility: value }));
-        setProfileStep('skillsTools');
+      case 'skills':
+        setProfile((prev) => ({ ...prev, skills: value }));
+        setProfileStep('projects');
         setIsAgentTyping(true);
         setTimeout(() => {
-          appendAiMessage('What core Skills and Tools are you familiar with? (comma separated, e.g. React, Node.js, Docker, Git):');
+          appendAiMessage('What key projects have you built? Describe their scope and your contributions briefly:');
           setIsAgentTyping(false);
           setInputVal('');
         }, 600);
         break;
 
-      case 'skillsTools':
-        const skillsVal = value;
-        const projCount = Number(profile.projectsCount) || 0;
-        const yearsExp = Number(profile.experience) || 0;
-        const respLower = profile.responsibility.toLowerCase();
-        const skillsLower = skillsVal.toLowerCase();
-
-        // Calculate level automatically based on experience, projects count, roles, and skills
-        let calculatedLevel = 'Beginner';
-        if (yearsExp === 0 && projCount === 0) {
-          calculatedLevel = 'Beginner';
-        } else if (yearsExp >= 5 || projCount >= 5 || (yearsExp >= 3 && (respLower.includes('lead') || respLower.includes('architect') || respLower.includes('senior') || respLower.includes('design') || respLower.includes('manage')))) {
-          calculatedLevel = 'Advanced';
-        } else if (yearsExp >= 2 || projCount >= 2 || respLower.includes('developer') || respLower.includes('engineer') || skillsLower.split(',').length >= 3) {
-          calculatedLevel = 'Intermediate';
-        }
-
-        const finalProfile = {
-          name: profile.name,
-          employeeId: user?.employeeId || 'EMP-TEMP',
-          department: user?.department || 'Engineering',
-          jobRole: profile.responsibility || 'Developer',
-          experience: yearsExp, // map years of experience to schema experience parameter
-          skills: skillsVal,
-          certificationLevel: calculatedLevel
-        };
-
-        setProfile(finalProfile);
-        setProfileStep('ready');
+      case 'projects':
+        setProfile((prev) => ({ ...prev, projects: value }));
+        setProfileStep('aiExperience');
         setIsAgentTyping(true);
-
-        const briefPoints = PERSONA_BRIEFS[calculatedLevel].map((pt, idx) => `${idx + 1}. ${pt}`).join('\n');
-
         setTimeout(() => {
-          appendAiMessage(`Perfect! I have analyzed your persona details and suggested the target certification path.
+          appendAiMessage('What has been your experience with AI integration and Cortex features like RAG, Agents, or APIs? (e.g., Have you built any or are you new to them?):');
+          setIsAgentTyping(false);
+          setInputVal('');
+        }, 600);
+        break;
 
-**Suggested Certification Level:** ${calculatedLevel} (decided based on your profile inputs)
-* Use Cases: ${profile.useCases || 'General'}
-* Projects Deployed: ${projCount}
-* Experience: ${yearsExp} Years
-* Responsibilities: ${finalProfile.jobRole}
-* Skills: ${finalProfile.skills}
+      case 'aiExperience':
+        setIsAgentTyping(true);
+        try {
+          const rawProfileData = {
+            jobRoleFocus: profile.jobRoleFocus,
+            experience: Number(profile.experience),
+            skills: profile.skills,
+            projects: profile.projects,
+            aiExperience: value
+          };
+
+          // Call backend endpoint to analyze persona
+          const { data } = await api.post('/api/assessments/analyze-persona', rawProfileData);
+          const { jobRole, certificationLevel } = data;
+
+          const finalProfile = {
+            name: profile.name,
+            employeeId: user?.employeeId || 'EMP-TEMP',
+            department: user?.department || 'Engineering',
+            jobRoleFocus: profile.jobRoleFocus,
+            experience: Number(profile.experience),
+            skills: profile.skills,
+            projects: profile.projects,
+            aiExperience: value,
+            jobRole,
+            certificationLevel
+          };
+
+          setProfile(finalProfile);
+          setProfileStep('ready');
+
+          const briefPoints = PERSONA_BRIEFS[certificationLevel].map((pt, idx) => `${idx + 1}. ${pt}`).join('\n');
+
+          appendAiMessage(`Based on our conversation, I have analyzed your background:
+
+**Suggested Target Assessment:**
+* **Role Persona:** ${jobRole}
+* **Certification Level:** ${certificationLevel}
 
 ---
 
-### Recommended Level Persona Brief
-To succeed at the **${calculatedLevel}** tier, you should have the following roles, responsibilities, and skillsets:
+### Suggested Persona Brief
+To succeed at the **${certificationLevel} ${jobRole}** tier, you should have the following roles, responsibilities, and skillsets:
 
 ${briefPoints}
 
 ---
 
 Ready to proceed to the exam rules review?`);
+        } catch (err) {
+          console.error('Failed to analyze persona:', err);
+          const expYears = Number(profile.experience) || 0;
+          const fallbackLvl = expYears >= 5 ? 'Advanced' : (expYears >= 2 ? 'Intermediate' : 'Beginner');
+          const finalProfile = {
+            name: profile.name,
+            employeeId: user?.employeeId || 'EMP-TEMP',
+            department: user?.department || 'Engineering',
+            jobRoleFocus: profile.jobRoleFocus,
+            experience: Number(profile.experience),
+            skills: profile.skills,
+            projects: profile.projects,
+            aiExperience: value,
+            jobRole: 'Developer',
+            certificationLevel: fallbackLvl
+          };
+          setProfile(finalProfile);
+          setProfileStep('ready');
+          appendAiMessage(`Setup complete! I suggest taking the **${fallbackLvl} Developer** certification path. Ready to proceed to the exam rules review?`);
+        } finally {
           setIsAgentTyping(false);
           setInputVal('');
-        }, 800);
+        }
         break;
 
       default:
@@ -367,6 +381,8 @@ Ready to proceed to the exam rules review?`);
 
   // Launch assessment API
   const handleStartExam = async () => {
+    if (isStartingExam) return;
+    setIsStartingExam(true);
     setIsAgentTyping(true);
     try {
       // Request fullscreen while the click gesture is still active.
@@ -376,6 +392,7 @@ Ready to proceed to the exam rules review?`);
       setAssessmentId(data.assessmentId);
       setTotalQuestions(data.totalQuestions);
 
+      setShowRules(false); // Close modal when questions are successfully loaded and DB created
       setProfileStep('testing');
       setIsTesting(true);
 
@@ -394,6 +411,7 @@ Ready to proceed to the exam rules review?`);
       appendAiMessage('An error occurred during assessment generation. Please try starting again.');
     } finally {
       setIsAgentTyping(false);
+      setIsStartingExam(false);
     }
   };
 
@@ -621,13 +639,17 @@ Ready to proceed to the exam rules review?`);
                       <td className="px-3 py-2 text-right">120s (2m)</td>
                     </tr>
                     <tr>
-                      <td className="px-3 py-2 font-medium text-slate-800">Scenario-based</td>
-                      <td className="px-3 py-2 text-right">240s (4m)</td>
-                    </tr>
-                    <tr>
-                      <td className="px-3 py-2 font-medium text-slate-800">Long Answer</td>
-                      <td className="px-3 py-2 text-right">300s (5m)</td>
-                    </tr>
+                       <td className="px-3 py-2 font-medium text-slate-800">Scenario-based</td>
+                       <td className="px-3 py-2 text-right">240s (4m)</td>
+                     </tr>
+                     <tr>
+                       <td className="px-3 py-2 font-medium text-slate-800">Coding / Labs</td>
+                       <td className="px-3 py-2 text-right">300s (5m)</td>
+                     </tr>
+                     <tr>
+                       <td className="px-3 py-2 font-medium text-slate-800">Long Answer</td>
+                       <td className="px-3 py-2 text-right">300s (5m)</td>
+                     </tr>
                   </tbody>
                 </table>
               </div>
@@ -644,12 +666,12 @@ Ready to proceed to the exam rules review?`);
             </button>
             <button
               onClick={() => {
-                setShowRules(false);
                 handleStartExam();
               }}
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#ff6a1f] to-[#ff4a03] hover:from-[#ff4a03] hover:to-[#d63d04] text-white font-bold text-sm transition-all shadow-[0_10px_24px_rgba(255,106,31,0.22)]"
+              disabled={isStartingExam}
+              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#ff6a1f] to-[#ff4a03] hover:from-[#ff4a03] hover:to-[#d63d04] text-white font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_10px_24px_rgba(255,106,31,0.22)]"
             >
-              Acknowledge & Start Exam
+              {isStartingExam ? 'Generating Assessment...' : 'Acknowledge & Start Exam'}
             </button>
           </div>
         </div>
@@ -753,7 +775,7 @@ Ready to proceed to the exam rules review?`);
                     <div ref={chatEndRef}></div>
                   </div>
 
-                  {profileStep !== 'level' && profileStep !== 'ready' && !isTesting && (
+                  {profileStep !== 'ready' && !isTesting && (
                     <form
                       onSubmit={(e) => {
                         e.preventDefault();
@@ -776,20 +798,6 @@ Ready to proceed to the exam rules review?`);
                         <Send className="w-4 h-4" />
                       </button>
                     </form>
-                  )}
-
-                  {profileStep === 'level' && !isTesting && (
-                    <div className="mt-4 flex flex-wrap gap-3 justify-center">
-                      {['Beginner', 'Intermediate', 'Advanced'].map((lvl) => (
-                        <button
-                          key={lvl}
-                          onClick={() => handleProfileInputSubmit(lvl)}
-                          className="px-5 py-2 bg-gradient-to-r from-[#ff6a1f] to-[#ff4a03] hover:from-[#ff4a03] hover:to-[#d63d04] border border-[#ff8b4d] text-white rounded-xl text-sm font-semibold transition-all shadow-[0_10px_22px_rgba(255,106,31,0.20)]"
-                        >
-                          {lvl} Level
-                        </button>
-                      ))}
-                    </div>
                   )}
 
                   {profileStep === 'ready' && !isTesting && (
@@ -886,18 +894,30 @@ Ready to proceed to the exam rules review?`);
                       </div>
                     )}
 
-                    {['Long', 'Scenario', 'Logical', 'Analytical'].includes(currentQuestion.type) && (
-                      <div className="relative">
-                        <textarea
-                          rows={7}
-                          value={selectedAnswer || ''}
-                          onChange={(e) => setSelectedAnswer(e.target.value)}
-                          placeholder="Write your comprehensive analysis response here... (Pseudocode or detailed steps welcome)"
-                          className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-[#ff6a1f] text-slate-950 placeholder-slate-400 resize-none"
-                          style={{ caretColor: '#ff6a1f' }}
-                        />
-                      </div>
-                    )}
+                    {['Long', 'Scenario', 'Logical', 'Analytical'].includes(currentQuestion.type) && (() => {
+                      const isCodeFocused = currentQuestion.type === 'Scenario' && (
+                        currentQuestion.topic?.toLowerCase().includes('coding') ||
+                        currentQuestion.topic?.toLowerCase().includes('code') ||
+                        currentQuestion.text?.toLowerCase().includes('write code') ||
+                        currentQuestion.text?.toLowerCase().includes('api') ||
+                        currentQuestion.text?.toLowerCase().includes('sdk')
+                      );
+                      return (
+                        <div className="relative">
+                          <textarea
+                            rows={7}
+                            value={selectedAnswer || ''}
+                            onChange={(e) => setSelectedAnswer(e.target.value)}
+                            placeholder={isCodeFocused ? "// Write your code or configuration here...\n" : "Write your comprehensive analysis response here... (Pseudocode or detailed steps welcome)"}
+                            className={`w-full border rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-[#ff6a1f] resize-none
+                              ${isCodeFocused 
+                                ? 'bg-slate-950 border-slate-800 text-emerald-400 font-mono' 
+                                : 'bg-white border-slate-200 text-slate-950 placeholder-slate-400'}`}
+                            style={{ caretColor: '#ff6a1f' }}
+                          />
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {isTesting && currentQuestion && (
@@ -948,23 +968,8 @@ Ready to proceed to the exam rules review?`);
 
               {/* 3. CONTROLS / INPUT PANEL */}
               <div className="mt-4 pt-2 shrink-0">
-                {/* Setup Options rendering */}
                 {!isTesting && (
                   <>
-                    {profileStep === 'level' && (
-                      <div className="flex flex-wrap gap-3 mb-4 justify-center">
-                        {['Beginner', 'Intermediate', 'Advanced'].map((lvl) => (
-                          <button
-                            key={lvl}
-                            onClick={() => handleProfileInputSubmit(lvl)}
-                            className="px-5 py-2 bg-gradient-to-r from-[#ff6a1f] to-[#ff4a03] hover:from-[#ff4a03] hover:to-[#d63d04] border border-[#ff8b4d] text-white rounded-xl text-sm font-semibold transition-all shadow-[0_10px_22px_rgba(255,106,31,0.20)]"
-                          >
-                            {lvl} Level
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
                     {profileStep === 'ready' && (
                       <div className="flex justify-center mb-4">
                         <button
@@ -977,8 +982,7 @@ Ready to proceed to the exam rules review?`);
                       </div>
                     )}
 
-                    {/* Normal text collector input */}
-                    {profileStep !== 'level' && profileStep !== 'ready' && (
+                    {profileStep !== 'ready' && (
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
@@ -1092,18 +1096,30 @@ Ready to proceed to the exam rules review?`);
                     )}
 
                     {/* Long, Scenario, Logical, Analytical Text Area rendering */}
-                    {['Long', 'Scenario', 'Logical', 'Analytical'].includes(currentQuestion.type) && (
-                      <div className="relative">
-                        <textarea
-                          rows={5}
-                          value={selectedAnswer || ''}
-                          onChange={(e) => setSelectedAnswer(e.target.value)}
-                          placeholder="Write your comprehensive analysis response here... (Pseudocode or detailed steps welcome)"
-                          className="w-full bg-white border border-slate-200 rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-[#ff6a1f] text-slate-950 placeholder-slate-400 resize-none"
-                          style={{ caretColor: '#ff6a1f' }}
-                        />
-                      </div>
-                    )}
+                    {['Long', 'Scenario', 'Logical', 'Analytical'].includes(currentQuestion.type) && (() => {
+                      const isCodeFocused = currentQuestion.type === 'Scenario' && (
+                        currentQuestion.topic?.toLowerCase().includes('coding') ||
+                        currentQuestion.topic?.toLowerCase().includes('code') ||
+                        currentQuestion.text?.toLowerCase().includes('write code') ||
+                        currentQuestion.text?.toLowerCase().includes('api') ||
+                        currentQuestion.text?.toLowerCase().includes('sdk')
+                      );
+                      return (
+                        <div className="relative">
+                          <textarea
+                            rows={5}
+                            value={selectedAnswer || ''}
+                            onChange={(e) => setSelectedAnswer(e.target.value)}
+                            placeholder={isCodeFocused ? "// Write your code or configuration here...\n" : "Write your comprehensive analysis response here... (Pseudocode or detailed steps welcome)"}
+                            className={`w-full border rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-[#ff6a1f] resize-none
+                              ${isCodeFocused 
+                                ? 'bg-slate-950 border-slate-800 text-emerald-400 font-mono' 
+                                : 'bg-white border-slate-200 text-slate-950 placeholder-slate-400'}`}
+                            style={{ caretColor: '#ff6a1f' }}
+                          />
+                        </div>
+                      );
+                    })()}
 
                     {/* Submission button */}
                     <div className="flex justify-between items-center pt-2 border-t border-slate-200">

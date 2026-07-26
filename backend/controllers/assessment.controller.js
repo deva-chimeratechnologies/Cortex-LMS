@@ -4,7 +4,7 @@ import Answer from '../models/Answer.js';
 import CheatingLog from '../models/CheatingLog.js';
 import Certificate from '../models/Certificate.js';
 import Report from '../models/Report.js';
-import { generateQuestions, evaluateTextAnswer } from '../services/groq.service.js';
+import { generateQuestions, evaluateTextAnswer, determinePersonaRoleAndLevel } from '../services/groq.service.js';
 import { compileAssessmentReport } from '../services/report.service.js';
 import crypto from 'crypto';
 
@@ -41,7 +41,10 @@ export const startAssessment = async (req, res, next) => {
 
     // Generate questions using AI
     console.log(`Generating adaptive questions for candidate: ${name}`);
-    const questionsList = await generateQuestions(assessment.profile);
+    const questionsList = await generateQuestions({
+      ...req.body,
+      skills: skillsArray
+    });
 
     // Save questions in the database
     const savedQuestions = [];
@@ -432,6 +435,33 @@ export const terminateAssessment = async (req, res, next) => {
       message: 'Assessment was terminated successfully',
       status: 'terminated'
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Analyze candidate onboarding chat to suggest Role and Certification Level
+// @route   POST /api/assessments/analyze-persona
+// @access  Private
+export const analyzePersona = async (req, res, next) => {
+  try {
+    const { jobRoleFocus, experience, skills, projects, aiExperience } = req.body;
+
+    if (experience === undefined || isNaN(experience) || Number(experience) < 0) {
+      res.status(400);
+      throw new Error('Please provide valid years of experience');
+    }
+
+    console.log('Analyzing candidate onboarding responses to suggest role and level...');
+    const result = await determinePersonaRoleAndLevel({
+      jobRoleFocus,
+      experience,
+      skills,
+      projects,
+      aiExperience,
+    });
+
+    res.json(result);
   } catch (error) {
     next(error);
   }
