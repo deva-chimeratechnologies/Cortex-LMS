@@ -22,6 +22,23 @@ export const sanitizeDifyQuestions = (questions) => {
 
     // 2. If the question has options, it must be MCQ or MSQ
     if (options.length > 0) {
+      const mapLetterToOption = (val) => {
+        if (typeof val === 'string' && val.trim().length === 1) {
+          const charCode = val.trim().toUpperCase().charCodeAt(0);
+          const index = charCode - 65; // A=65, B=66, etc.
+          if (index >= 0 && index < options.length) {
+            return options[index];
+          }
+        }
+        return val;
+      };
+
+      if (Array.isArray(correctAnswer)) {
+        correctAnswer = correctAnswer.map(mapLetterToOption);
+      } else {
+        correctAnswer = mapLetterToOption(correctAnswer);
+      }
+
       const isMultiSelect = Array.isArray(correctAnswer) && correctAnswer.length > 1;
 
       // Map Scenario/Logical questions with options to MCQ or MSQ
@@ -63,7 +80,7 @@ export const sanitizeDifyQuestions = (questions) => {
     }
 
     return {
-      text: q.text || '',
+      text: q.text ? (q.text.includes('(Cortex documentation)') ? q.text : `${q.text} (Cortex documentation)`) : '',
       type,
       options,
       correctAnswer,

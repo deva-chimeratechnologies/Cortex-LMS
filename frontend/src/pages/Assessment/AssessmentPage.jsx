@@ -127,7 +127,7 @@ const AssessmentPage = () => {
       setMessages([
         {
           sender: 'ai',
-          text: `Hello! I am your AI Assessment Agent. I will configure your persona to generate a custom certification assessment for you.\n\nFirst, describe your daily focus or role. (e.g., Do you write code, design system architectures, or lead developer teams?):`,
+          text: `Hello! I am your AI Assessment Agent. I will configure your persona to generate a custom certification assessment for you.\n\nFirst, describe your daily focus or role and how many years of professional experience you have. (e.g., "I write backend code daily and have 3 years of experience" or "I am a trainee"):`,
         },
       ]);
       setIsAgentTyping(false);
@@ -247,135 +247,73 @@ const AssessmentPage = () => {
     if (!value.trim()) return;
 
     // Append candidate message
-    setMessages((prev) => [...prev, { sender: 'user', text: value }]);
+    const updatedMessages = [...messages, { sender: 'user', text: value }];
+    setMessages(updatedMessages);
     setInputVal('');
+    setIsAgentTyping(true);
 
-    // Advance states
-    switch (profileStep) {
-      case 'jobRole':
-        setProfile((prev) => ({ ...prev, jobRoleFocus: value }));
-        setProfileStep('experience');
-        setIsAgentTyping(true);
-        setTimeout(() => {
-          appendAiMessage('How many years of professional experience do you have?');
-          setIsAgentTyping(false);
-          setInputVal('');
-        }, 600);
-        break;
+    try {
+      // Submit conversational history to the backend onboarding chat endpoint
+      const { data } = await api.post('/api/assessments/onboarding-chat', { messages: updatedMessages });
 
-      case 'experience':
-        if (isNaN(value) || Number(value) < 0) {
-          appendAiMessage('Please enter a valid numeric value for your years of experience.');
-          return;
-        }
-        setProfile((prev) => ({ ...prev, experience: Number(value) }));
-        setProfileStep('skills');
-        setIsAgentTyping(true);
-        setTimeout(() => {
-          appendAiMessage('What core technical skills and tools do you use regularly? (comma separated, e.g. Java, Python, Docker, Kubernetes, Git):');
-          setIsAgentTyping(false);
-          setInputVal('');
-        }, 600);
-        break;
+      if (data.status === 'complete') {
+        const { jobRole, certificationLevel, extractedProfile, personaMarkdown } = data;
 
-      case 'skills':
-        setProfile((prev) => ({ ...prev, skills: value }));
-        setProfileStep('projects');
-        setIsAgentTyping(true);
-        setTimeout(() => {
-          appendAiMessage('What key projects have you built? Describe their scope and your contributions briefly:');
-          setIsAgentTyping(false);
-          setInputVal('');
-        }, 600);
-        break;
+        const finalProfile = {
+          name: profile.name,
+          employeeId: user?.employeeId || 'EMP-TEMP',
+          department: user?.department || 'Engineering',
+          jobRoleFocus: extractedProfile.jobRoleFocus,
+          experience: Number(extractedProfile.experience),
+          skills: extractedProfile.skills,
+          projects: extractedProfile.projects,
+          aiExperience: extractedProfile.aiExperience,
+          jobRole,
+          certificationLevel
+        };
 
-      case 'projects':
-        setProfile((prev) => ({ ...prev, projects: value }));
-        setProfileStep('aiExperience');
-        setIsAgentTyping(true);
-        setTimeout(() => {
-          appendAiMessage('What has been your experience with AI integration and Cortex features like RAG, Agents, or APIs? (e.g., Have you built any or are you new to them?):');
-          setIsAgentTyping(false);
-          setInputVal('');
-        }, 600);
-        break;
+        setProfile(finalProfile);
+        setProfileStep('ready');
 
-      case 'aiExperience':
-        setIsAgentTyping(true);
-        try {
-          const rawProfileData = {
-            jobRoleFocus: profile.jobRoleFocus,
-            experience: Number(profile.experience),
-            skills: profile.skills,
-            projects: profile.projects,
-            aiExperience: value
-          };
+        appendAiMessage(`Perfect! I have gathered all necessary information from our conversation.
 
-          // Call backend endpoint to analyze persona
-          const { data } = await api.post('/api/assessments/analyze-persona', rawProfileData);
-          const { jobRole, certificationLevel } = data;
-
-          const finalProfile = {
-            name: profile.name,
-            employeeId: user?.employeeId || 'EMP-TEMP',
-            department: user?.department || 'Engineering',
-            jobRoleFocus: profile.jobRoleFocus,
-            experience: Number(profile.experience),
-            skills: profile.skills,
-            projects: profile.projects,
-            aiExperience: value,
-            jobRole,
-            certificationLevel
-          };
-
-          setProfile(finalProfile);
-          setProfileStep('ready');
-
-          const briefPoints = PERSONA_BRIEFS[certificationLevel].map((pt, idx) => `${idx + 1}. ${pt}`).join('\n');
-
-          appendAiMessage(`Based on our conversation, I have analyzed your background:
-
-**Suggested Target Assessment:**
-* **Role Persona:** ${jobRole}
+Based on our discussion, I have analyzed your profile:
+* **Target Role Persona:** ${jobRole}
 * **Certification Level:** ${certificationLevel}
 
 ---
 
-### Suggested Persona Brief
-To succeed at the **${certificationLevel} ${jobRole}** tier, you should have the following roles, responsibilities, and skillsets:
-
-${briefPoints}
+### Your Candidate Persona Summary:
+${personaMarkdown}
 
 ---
 
 Ready to proceed to the exam rules review?`);
-        } catch (err) {
-          console.error('Failed to analyze persona:', err);
-          const expYears = Number(profile.experience) || 0;
-          const fallbackLvl = expYears >= 5 ? 'Advanced' : (expYears >= 2 ? 'Intermediate' : 'Beginner');
-          const finalProfile = {
-            name: profile.name,
-            employeeId: user?.employeeId || 'EMP-TEMP',
-            department: user?.department || 'Engineering',
-            jobRoleFocus: profile.jobRoleFocus,
-            experience: Number(profile.experience),
-            skills: profile.skills,
-            projects: profile.projects,
-            aiExperience: value,
-            jobRole: 'Developer',
-            certificationLevel: fallbackLvl
-          };
-          setProfile(finalProfile);
-          setProfileStep('ready');
-          appendAiMessage(`Setup complete! I suggest taking the **${fallbackLvl} Developer** certification path. Ready to proceed to the exam rules review?`);
-        } finally {
-          setIsAgentTyping(false);
-          setInputVal('');
-        }
-        break;
-
-      default:
-        break;
+      } else {
+        appendAiMessage(data.nextQuestion);
+      }
+    } catch (err) {
+      console.error('Failed to analyze persona:', err);
+      const expYears = Number(profile.experience) || 2;
+      const fallbackLvl = expYears >= 5 ? 'Advanced' : (expYears >= 2 ? 'Intermediate' : 'Beginner');
+      const finalProfile = {
+        name: profile.name,
+        employeeId: user?.employeeId || 'EMP-TEMP',
+        department: user?.department || 'Engineering',
+        jobRoleFocus: profile.jobRoleFocus || 'Platform Integration Developer',
+        experience: Number(profile.experience || 2),
+        skills: profile.skills || 'Java, REST APIs, Docker',
+        projects: profile.projects || 'Enterprise application integration',
+        aiExperience: value,
+        jobRole: 'Developer',
+        certificationLevel: fallbackLvl
+      };
+      setProfile(finalProfile);
+      setProfileStep('ready');
+      appendAiMessage(`Setup complete! I suggest taking the **${fallbackLvl} Developer** certification path. Ready to proceed to the exam rules review?`);
+    } finally {
+      setIsAgentTyping(false);
+      setInputVal('');
     }
   };
 
@@ -519,6 +457,19 @@ Ready to proceed to the exam rules review?`);
       const timeTaken = currentQuestion.timerDuration - timer;
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
 
+      // Append final candidate response bubble to chat
+      const answerDisplay = Array.isArray(selectedAnswer)
+        ? selectedAnswer.join(', ')
+        : (selectedAnswer || 'Answer submitted');
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: 'user',
+          text: `Question ${questionNum}: ${currentQuestion.text}\n\nAnswer: ${answerDisplay}`
+        }
+      ]);
+
       await api.post(`/api/assessments/${assessmentId}/answer`, {
         questionId: currentQuestion._id,
         answerText: selectedAnswer || '',
@@ -541,7 +492,7 @@ Ready to proceed to the exam rules review?`);
     setIsTerminated(false);
     setAssessmentId(null);
     setIsTesting(false);
-    setProfileStep('useCases');
+    setProfileStep('jobRole');
     setShowRules(false);
     startFreshSetup();
   };
@@ -681,6 +632,13 @@ Ready to proceed to the exam rules review?`);
 
   const isExamMode = isTesting || isTerminated;
   const showActiveExamLayout = isTesting && currentQuestion;
+  const isCodeFocused = currentQuestion && currentQuestion.type === 'Scenario' && (
+    currentQuestion.topic?.toLowerCase().includes('coding') ||
+    currentQuestion.topic?.toLowerCase().includes('code') ||
+    currentQuestion.text?.toLowerCase().includes('write code') ||
+    currentQuestion.text?.toLowerCase().includes('api') ||
+    currentQuestion.text?.toLowerCase().includes('sdk')
+  );
 
   return (
     <div
@@ -894,30 +852,21 @@ Ready to proceed to the exam rules review?`);
                       </div>
                     )}
 
-                    {['Long', 'Scenario', 'Logical', 'Analytical'].includes(currentQuestion.type) && (() => {
-                      const isCodeFocused = currentQuestion.type === 'Scenario' && (
-                        currentQuestion.topic?.toLowerCase().includes('coding') ||
-                        currentQuestion.topic?.toLowerCase().includes('code') ||
-                        currentQuestion.text?.toLowerCase().includes('write code') ||
-                        currentQuestion.text?.toLowerCase().includes('api') ||
-                        currentQuestion.text?.toLowerCase().includes('sdk')
-                      );
-                      return (
-                        <div className="relative">
-                          <textarea
-                            rows={7}
-                            value={selectedAnswer || ''}
-                            onChange={(e) => setSelectedAnswer(e.target.value)}
-                            placeholder={isCodeFocused ? "// Write your code or configuration here...\n" : "Write your comprehensive analysis response here... (Pseudocode or detailed steps welcome)"}
-                            className={`w-full border rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-[#ff6a1f] resize-none
-                              ${isCodeFocused 
-                                ? 'bg-slate-950 border-slate-800 text-emerald-400 font-mono' 
-                                : 'bg-white border-slate-200 text-slate-950 placeholder-slate-400'}`}
-                            style={{ caretColor: '#ff6a1f' }}
-                          />
-                        </div>
-                      );
-                    })()}
+                    {['Long', 'Scenario', 'Logical', 'Analytical'].includes(currentQuestion.type) && (
+                      <div className="relative">
+                        <textarea
+                          rows={7}
+                          value={selectedAnswer || ''}
+                          onChange={(e) => setSelectedAnswer(e.target.value)}
+                          placeholder={isCodeFocused ? "// Write your code or configuration here...\n" : "Write your comprehensive analysis response here... (Pseudocode or detailed steps welcome)"}
+                          className={`w-full border rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-[#ff6a1f] resize-none
+                            ${isCodeFocused 
+                              ? 'bg-slate-950 border-slate-800 text-emerald-400 font-mono' 
+                              : 'bg-white border-slate-200 text-slate-950 placeholder-slate-400'}`}
+                          style={{ caretColor: '#ff6a1f' }}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {isTesting && currentQuestion && (
@@ -1096,30 +1045,21 @@ Ready to proceed to the exam rules review?`);
                     )}
 
                     {/* Long, Scenario, Logical, Analytical Text Area rendering */}
-                    {['Long', 'Scenario', 'Logical', 'Analytical'].includes(currentQuestion.type) && (() => {
-                      const isCodeFocused = currentQuestion.type === 'Scenario' && (
-                        currentQuestion.topic?.toLowerCase().includes('coding') ||
-                        currentQuestion.topic?.toLowerCase().includes('code') ||
-                        currentQuestion.text?.toLowerCase().includes('write code') ||
-                        currentQuestion.text?.toLowerCase().includes('api') ||
-                        currentQuestion.text?.toLowerCase().includes('sdk')
-                      );
-                      return (
-                        <div className="relative">
-                          <textarea
-                            rows={5}
-                            value={selectedAnswer || ''}
-                            onChange={(e) => setSelectedAnswer(e.target.value)}
-                            placeholder={isCodeFocused ? "// Write your code or configuration here...\n" : "Write your comprehensive analysis response here... (Pseudocode or detailed steps welcome)"}
-                            className={`w-full border rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-[#ff6a1f] resize-none
-                              ${isCodeFocused 
-                                ? 'bg-slate-950 border-slate-800 text-emerald-400 font-mono' 
-                                : 'bg-white border-slate-200 text-slate-950 placeholder-slate-400'}`}
-                            style={{ caretColor: '#ff6a1f' }}
-                          />
-                        </div>
-                      );
-                    })()}
+                    {['Long', 'Scenario', 'Logical', 'Analytical'].includes(currentQuestion.type) && (
+                      <div className="relative">
+                        <textarea
+                          rows={5}
+                          value={selectedAnswer || ''}
+                          onChange={(e) => setSelectedAnswer(e.target.value)}
+                          placeholder={isCodeFocused ? "// Write your code or configuration here...\n" : "Write your comprehensive analysis response here... (Pseudocode or detailed steps welcome)"}
+                          className={`w-full border rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-[#ff6a1f] resize-none
+                            ${isCodeFocused 
+                              ? 'bg-slate-950 border-slate-800 text-emerald-400 font-mono' 
+                              : 'bg-white border-slate-200 text-slate-950 placeholder-slate-400'}`}
+                          style={{ caretColor: '#ff6a1f' }}
+                        />
+                      </div>
+                    )}
 
                     {/* Submission button */}
                     <div className="flex justify-between items-center pt-2 border-t border-slate-200">

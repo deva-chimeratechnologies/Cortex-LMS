@@ -4,7 +4,7 @@ import Answer from '../models/Answer.js';
 import CheatingLog from '../models/CheatingLog.js';
 import Certificate from '../models/Certificate.js';
 import Report from '../models/Report.js';
-import { generateQuestions, evaluateTextAnswer, determinePersonaRoleAndLevel } from '../services/groq.service.js';
+import { generateQuestions, evaluateTextAnswer, determinePersonaRoleAndLevel, runOnboardingChatLlm, synthesizeMarkdownPersona } from '../services/groq.service.js';
 import { compileAssessmentReport } from '../services/report.service.js';
 import crypto from 'crypto';
 
@@ -466,3 +466,49 @@ export const analyzePersona = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Handle dynamic candidate onboarding chat
+// @route   POST /api/assessments/onboarding-chat
+// @access  Private
+export const onboardingChat = async (req, res, next) => {
+  try {
+    const { messages } = req.body;
+
+    if (!messages || !Array.isArray(messages)) {
+      res.status(400);
+      throw new Error('Please provide message history array');
+    }
+
+    console.log('Processing dynamic onboarding chat message...');
+    const result = await runOnboardingChatLlm(messages);
+
+    if (result.status === 'complete') {
+      const { jobRole, certificationLevel, extractedProfile } = result;
+
+      const profileForSynthesis = {
+        jobRoleFocus: extractedProfile.jobRoleFocus,
+        experience: extractedProfile.experience,
+        skills: extractedProfile.skills,
+        projects: extractedProfile.projects,
+        aiExperience: extractedProfile.aiExperience,
+        jobRole,
+        certificationLevel
+      };
+
+      const personaMarkdown = await synthesizeMarkdownPersona(profileForSynthesis);
+
+      return res.json({
+        status: 'complete',
+        extractedProfile,
+        jobRole,
+        certificationLevel,
+        personaMarkdown
+      });
+    }
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+

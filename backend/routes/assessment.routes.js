@@ -7,7 +7,8 @@ import {
   evaluateAssessment, 
   getUserAssessments,
   terminateAssessment,
-  analyzePersona
+  analyzePersona,
+  onboardingChat
 } from '../controllers/assessment.controller.js';
 import { protect } from '../middleware/auth.middleware.js';
 import { 
@@ -22,6 +23,7 @@ router.use(protect); // Protect all routes below
 
 router.post('/start', validateStartAssessment, startAssessment);
 router.post('/analyze-persona', analyzePersona);
+router.post('/onboarding-chat', onboardingChat);
 router.get('/history', getUserAssessments);
 router.get('/:id/question', getCurrentQuestion);
 router.post('/:id/answer', validateSubmitAnswer, submitAnswer);

@@ -1,6 +1,6 @@
 import '../config/env.js';
 import { OpenAI } from 'openai';
-import { generateDifyQuestions } from './dify.service.js';
+import { generateDifyQuestions, sanitizeDifyQuestions } from './dify.service.js';
 
 const apiKey = process.env.GROQ_API_KEY;
 let groq = null;
@@ -18,8 +18,7 @@ if (apiKey) {
 // Helper to generate mock questions if no API key is provided
 const generateMockQuestions = (profile) => {
   const { jobRole, certificationLevel, skills } = profile;
-  const skillsArray = Array.isArray(skills) ? skills : (typeof skills === 'string' ? skills.split(',').map(s => s.trim()) : []);
-  const mockTopics = skillsArray.length > 0 ? skillsArray : ['Core Concepts', 'Best Practices', 'System Design'];
+  const mockTopics = ['Generative AI Core', 'RAG Implementations', 'Prompt Engineering', 'Vector Database Search', 'LLM Integration'];
 
   const questionTypes = ['MCQ', 'MSQ', 'Short', 'Long', 'Scenario', 'Logical', 'Analytical'];
   const questions = [];
@@ -99,102 +98,191 @@ const shuffleArray = (array) => {
 
 // Synthesize a structured Markdown Persona from raw candidate profile onboarding fields
 export const synthesizeMarkdownPersona = async (profile) => {
+  const skillsArray = Array.isArray(profile.skills)
+    ? profile.skills
+    : (typeof profile.skills === 'string' ? profile.skills.split(',').map(s => s.trim()).filter(Boolean) : []);
+
   if (!groq) {
     console.log('Using Mock Persona Builder.');
-    return `Professional Summary:
-Software Engineer with ${profile.experience || 4} years of experience in backend development.
+    const exp = profile.experience || 2;
+    const certLvl = profile.certificationLevel || 'Intermediate';
+    const role = profile.jobRole || 'Platform Integration Developer';
+    const focus = profile.jobRoleFocus || 'Platform Integration Developer';
 
-Current Role:
-${profile.jobRole || 'Software Engineer'}
+    return `# Candidate Persona
 
-Experience:
-${profile.experience || 4} Years
+## Professional Summary
+Backend Platform Integration Developer with ${exp} years of experience building enterprise applications and integrating AI-powered solutions using Cortex APIs. Comfortable working across backend services, REST APIs, authentication, deployment pipelines, and AI assistant integration.
 
-Technical Skills:
-${Array.isArray(profile.skills) ? profile.skills.join('\n') : (profile.skills || 'Java\nSpring Boot\nDocker\nGit')}
+---
 
-Responsibilities:
-- Build backend APIs
-- Integrate AI services
-- Deploy production services
+## Current Role
+${focus}
 
-Projects:
-- AI document search
-- Enterprise chatbot
+---
 
-AI Experience:
-${profile.aiExperience || 'Intermediate'}
+## Experience Level
+${certLvl}
 
-Cloud Experience:
-${profile.cloudExperience || 'AWS'}
+Years of Experience: ${exp}
 
-Deployment Experience:
-${profile.deploymentExperience || 'Production Kubernetes'}
+---
 
-Architecture Experience:
-${profile.architectureExperience || 'Microservices'}
+## Primary Responsibilities
+- Design and develop backend services
+- Integrate Cortex REST APIs into enterprise applications
+- Configure and maintain Model Configs
+- Configure Prompt Configs
+- Configure Data Configs
+- Build Retrieval-Augmented Generation (RAG) assistants
+- Validate deployments in Development and Production environments
+- Collaborate with frontend teams to integrate AI assistants
 
-Security Experience:
-${profile.securityExperience || 'OAuth2'}
+---
 
-Cortex Experience:
-${profile.cortexExperience || 'Intermediate'}`;
+## Technical Skills
+
+### Programming
+${skillsArray.filter(s => ['java', 'python', 'c++', 'go', 'javascript', 'typescript', 'rust', 'c#', 'sql'].includes(s.toLowerCase())).map(s => `- ${s}`).join('\n') || '- Java\n- Python'}
+
+### Backend Development
+- REST APIs
+- JSON
+- Authentication
+- API Integration
+- Microservices
+
+### AI & Cortex
+- Cortex Platform
+- Model Config
+- Prompt Config
+- Data Config
+- Knowledge Base
+- RAG
+- Chat in a Box
+
+### Cloud & DevOps
+- Docker
+- AWS
+- Git
+- CI/CD
+
+---
+
+## AI Experience
+- ${profile.aiExperience || 'Built AI assistants using Cortex and integrated LLM APIs.'}
+
+---
+
+## Project Experience
+- ${profile.projects || 'Built enterprise backend applications and developed AI-powered chatbot integrations.'}
+
+---
+
+## Assessment Focus
+
+Prioritize questions on:
+
+- Cortex Model Configuration
+- Prompt Configuration
+- Data Configuration
+- Knowledge Base
+- RAG
+- Cortex REST APIs
+- Authentication
+- Deployment Validation
+
+De-emphasize topics unrelated to the candidate's responsibilities.
+
+---
+
+## Certification Target
+
+Role Persona: ${role}
+
+Certification Level: ${certLvl}`;
   }
 
   try {
     const prompt = `
       You are an expert HR assistant. Given a candidate's raw profile details, synthesize them into a clean, structured Markdown text block.
-      Do not add any JSON format or conversational headers. Output ONLY the text headers and values exactly like the target format below.
+      Do not add any JSON format or conversational headers. Output ONLY the markdown content exactly matching the target format below.
 
       Raw Candidate Data:
-      - Job Role / Current Role: ${profile.jobRole}
+      - Job Role / Current Role: ${profile.jobRoleFocus}
+      - Target Persona Role: ${profile.jobRole || 'Platform Integration Developer'}
+      - Target Certification Level: ${profile.certificationLevel || 'Intermediate'}
       - Years of Experience: ${profile.experience}
-      - Skills: ${Array.isArray(profile.skills) ? profile.skills.join(', ') : profile.skills}
-      - Projects / Use Cases: ${profile.projects || profile.useCases || 'General backend development'}
-      - Core Responsibilities: ${profile.responsibility || profile.jobRole}
-      - AI Experience Level: ${profile.aiExperience || 'Intermediate'}
-      - Cortex Experience Level: ${profile.cortexExperience || 'Intermediate'}
-      - Cloud Experience: ${profile.cloudExperience || 'AWS'}
-      - Deployment Experience: ${profile.deploymentExperience || 'Production Kubernetes'}
-      - Architecture Experience: ${profile.architectureExperience || 'Microservices'}
-      - Security Experience: ${profile.securityExperience || 'OAuth2 / JWT'}
+      - Skills: ${skillsArray.join(', ')}
+      - Projects / Use Cases: ${profile.projects || 'General backend development'}
+      - AI Experience: ${profile.aiExperience || 'Intermediate'}
 
-      Target Format (output only this with actual content):
-      Professional Summary:
+      Target Format (output only this with actual content filled in, keep the markdown titles, section headers, and horizontal separators "---" exactly as shown):
+      # Candidate Persona
+
+      ## Professional Summary
       <1-2 sentence professional summary of experience and role>
 
-      Current Role:
-      <Role>
+      ---
 
-      Experience:
-      <Years> Years
+      ## Current Role
+      <Current role / focus>
 
-      Technical Skills:
-      <list of technical skills, one per line>
+      ---
 
-      Responsibilities:
-      <bullet points of main responsibilities>
+      ## Experience Level
+      ${profile.certificationLevel || 'Intermediate'}
 
-      Projects:
-      <bullet points of key projects>
+      Years of Experience: ${profile.experience}
 
-      AI Experience:
-      <Beginner / Intermediate / Advanced>
+      ---
 
-      Cloud Experience:
-      <AWS / GCP / Azure / etc. (infer from skills or default to AWS)>
+      ## Primary Responsibilities
+      <bullet points of main responsibilities based on the job role focus, skills, and projects>
 
-      Deployment Experience:
-      <Docker / Kubernetes / Serverless / etc. (infer from skills)>
+      ---
 
-      Architecture Experience:
-      <Microservices / Monolith / Serverless / etc. (infer from skills)>
+      ## Technical Skills
 
-      Security Experience:
-      <OAuth2 / JWT / etc. (infer from skills)>
+      ### Programming
+      <bullet points of programming languages (e.g., - Java, - Python, etc. based on skills)>
 
-      Cortex Experience:
-      <Beginner / Intermediate / Advanced>
+      ### Backend Development
+      <bullet points of backend skills (e.g., - REST APIs, - JSON, - Authentication, etc.)>
+
+      ### AI & Cortex
+      <bullet points of AI & Cortex skills (e.g., - Cortex Platform, - Model Config, - Prompt Config, - Data Config, - Knowledge Base, - RAG, etc. based on skills and AI experience)>
+
+      ### Cloud & DevOps
+      <bullet points of Cloud/DevOps skills (e.g., - Docker, - AWS, - Git, - GitHub Actions, - CI/CD)>
+
+      ---
+
+      ## AI Experience
+      <bullet points detailing their AI integration, RAG, prompt config, or assistant creation experience>
+
+      ---
+
+      ## Project Experience
+      <bullet points describing their key projects and contributions>
+
+      ---
+
+      ## Assessment Focus
+
+      Prioritize questions on:
+
+      <bullet points of relevant topics for assessment based on their skills and role (e.g., - Cortex Model Configuration, - Prompt Configuration, - Data Configuration, - RAG, - REST APIs, - Authentication, etc.)>
+
+      De-emphasize topics unrelated to the candidate's responsibilities.
+
+      ---
+
+      ## Certification Target
+
+      Role Persona: ${profile.jobRole || 'Platform Integration Developer'}
+
+      Certification Level: ${profile.certificationLevel || 'Intermediate'}
     `;
 
     const response = await groq.chat.completions.create({
@@ -206,29 +294,88 @@ ${profile.cortexExperience || 'Intermediate'}`;
     return response.choices[0].message.content.trim();
   } catch (error) {
     console.error('Error synthesizing markdown persona:', error);
-    return `Professional Summary:
-Software Engineer with ${profile.experience} years of experience.
+    const exp = profile.experience || 2;
+    const certLvl = profile.certificationLevel || 'Intermediate';
+    const role = profile.jobRole || 'Platform Integration Developer';
+    const focus = profile.jobRoleFocus || 'Platform Integration Developer';
 
-Current Role:
-${profile.jobRole}
+    return `# Candidate Persona
 
-Experience:
-${profile.experience} Years
+## Professional Summary
+Backend Platform Integration Developer with ${exp} years of experience building enterprise applications and integrating AI-powered solutions.
 
-Technical Skills:
-${Array.isArray(profile.skills) ? profile.skills.join('\n') : profile.skills}
+---
 
-Responsibilities:
-- Build backend applications and APIs
+## Current Role
+${focus}
 
-Projects:
-- Core development
+---
 
-AI Experience:
-Intermediate
+## Experience Level
+${certLvl}
 
-Cortex Experience:
-Intermediate`;
+Years of Experience: ${exp}
+
+---
+
+## Primary Responsibilities
+- Design and develop backend services
+- Integrate Cortex REST APIs
+- Collaborate with developer teams
+
+---
+
+## Technical Skills
+
+### Programming
+${skillsArray.filter(s => ['java', 'python', 'c++', 'go', 'javascript', 'typescript', 'rust', 'c#', 'sql'].includes(s.toLowerCase())).map(s => `- ${s}`).join('\n') || '- Java\n- Python'}
+
+### Backend Development
+- REST APIs
+- JSON
+- API Integration
+
+### AI & Cortex
+- Cortex Platform
+- RAG
+- Model Config
+
+### Cloud & DevOps
+- Docker
+- Git
+- AWS
+
+---
+
+## AI Experience
+- ${profile.aiExperience || 'Cortex AI API integrations'}
+
+---
+
+## Project Experience
+- ${profile.projects || 'Enterprise integration projects'}
+
+---
+
+## Assessment Focus
+
+Prioritize questions on:
+
+- Cortex Model Configuration
+- Prompt Configuration
+- Data Configuration
+- Knowledge Base
+- RAG
+
+De-emphasize topics unrelated to the candidate's responsibilities.
+
+---
+
+## Certification Target
+
+Role Persona: ${role}
+
+Certification Level: ${certLvl}`;
   }
 };
 
@@ -319,7 +466,7 @@ export const generateGroqQuestions = async (profile, personaMarkdown, count) => 
       Rules for generation:
       1. Difficulty MUST strictly match the candidate's competency level.
       2. The distribution should be dynamic: generate a mix of MCQ, MSQ, Short (Short Answer), Long (Long Answer), Scenario (Scenario Based), Logical (Logical Reasoning), and Analytical (Analytical Thinking) questions.
-      3. Focus on general backend, software engineering, deployment, cloud, architecture, and security concepts relevant to the candidate's skills and role, but do NOT ask about Cortex features or Cortex APIs (as those are covered elsewhere).
+      3. Focus strictly on General Generative AI (Gen AI) and AI concepts and implementation problem-solving (such as RAG architectures, prompt design, embeddings, agent flows, temperature configs, LLM evaluation, and vector storage) relevant to the candidate's skills and programming stack. Do NOT ask about specific Cortex platform configurations or Cortex APIs (as those are covered by Cortex documentation questions).
       4. For MCQ and MSQ questions, include an array of options (exactly 4 options).
       5. Provide a 'correctAnswer' containing the exact correct option string (for MCQ), an array of correct option strings (for MSQ), or a model rubric/ideal answer (for Short, Long, Scenario, Logical, Analytical).
       6. timerDuration MUST be in seconds matching the requirements:
@@ -355,7 +502,8 @@ export const generateGroqQuestions = async (profile, personaMarkdown, count) => 
     });
 
     const data = JSON.parse(response.choices[0].message.content);
-    return data.questions || [];
+    const rawQuestions = data.questions || [];
+    return sanitizeDifyQuestions(rawQuestions);
   } catch (error) {
     console.error('Error generating Groq questions:', error);
     // Fallback to generating mock questions for the remaining balance to guarantee 20 questions
@@ -536,6 +684,121 @@ export const generateFinalReportText = async (profile, assessmentData) => {
       recommendations: ['Revise core modules.', 'Perform mock exercises with timers.'],
       learningSuggestions: [{ topic: 'Core Engineering concepts', resources: ['Standard documentation'] }],
       performanceSummary: 'The assessment was completed with standard marks. Review the recommendations to strengthen key areas.'
+    };
+  }
+};
+
+// Orchestrates dynamic onboarding chat sessions with natural conversational loops
+export const runOnboardingChatLlm = async (messages) => {
+  if (!groq) {
+    // Mock onboarding logic
+    const userMessages = messages.filter(m => m.sender === 'user');
+    const turnCount = userMessages.length;
+
+    if (turnCount === 1) {
+      return {
+        status: 'continue',
+        nextQuestion: `That sounds interesting! Working in that focus area is great. To customize your certification assessment, could you share how many years of experience you have, and what programming languages or backend tools you use regularly?`
+      };
+    } else if (turnCount === 2) {
+      return {
+        status: 'continue',
+        nextQuestion: `Got it. For your project experience, could you tell me about a specific challenge you faced in your project (especially if it involved Cortex APIs, RAG, or configurations) and how you solved it?`
+      };
+    } else {
+      const mockProfile = {
+        jobRoleFocus: 'Platform Integration Developer',
+        experience: 3,
+        skills: 'Java, Python, REST APIs, SQL, Git',
+        projects: 'Built backend enterprise applications with Cortex API integrations.',
+        aiExperience: 'Configured Model, Prompt and Data Configs, and set up RAG assistants.'
+      };
+      return {
+        status: 'complete',
+        extractedProfile: mockProfile,
+        jobRole: 'Developer',
+        certificationLevel: 'Intermediate'
+      };
+    }
+  }
+
+  try {
+    const formattedHistory = messages
+      .map(m => `${m.sender === 'ai' ? 'AI' : 'Candidate'}: ${m.text}`)
+      .join('\n');
+
+    const userMessagesCount = messages.filter(m => m.sender === 'user').length;
+
+    const prompt = `
+      You are an expert technical assessor guiding a candidate through a natural conversation to map their professional persona for certification.
+      
+      We want to gather details on:
+      1. Their current role / focus.
+      2. Their years of professional experience (this is CRITICAL to ask if they haven't mentioned it).
+      3. Their primary technical skills (e.g., Java, Python, SQL, REST APIs, MERN).
+      4. A project application (what problem they solved and how they solved it).
+      5. Their experience/usage of the Cortex platform (e.g. configurations, APIs, RAG).
+
+      Rules for conversation:
+      - Keep the conversation short, crisp, and natural (max 3-4 turns).
+      - If the candidate has not mentioned their years of experience, you MUST ask for it.
+      - If they have not mentioned if they have used the Cortex platform before, you MUST ask about their Cortex experience.
+      - Once the candidate has responded 3 or more times (Current Turn Count: ${userMessagesCount}), OR if you have sufficient details on their role, experience, skills, projects, and Cortex familiarity, you MUST mark the status as "complete".
+      - If continuing, generate a short, crisp, dynamic follow-up question related to the candidate's last answer.
+
+      Rules for mapping Certification Level:
+      - "Beginner": 0-1 years of experience, OR has NEVER used Cortex (e.g. they say they have not used Cortex), OR is a trainee/student/junior.
+      - "Intermediate": 2-4 years of experience AND has practical experience configuring or integrating Cortex (Model, Prompt, Data configs, RAG, etc.).
+      - "Advanced": 5+ years of experience AND has advanced production/enterprise Cortex deployment and architecture experience.
+
+      Conversation History:
+      ${formattedHistory}
+
+      Return ONLY a JSON object of this structure:
+      
+      If you need to continue the conversation (less than 3 turns and missing details):
+      {
+        "status": "continue",
+        "nextQuestion": "Your short, conversational, and highly contextual follow-up question here."
+      }
+
+      If we have enough details or have reached 3 or more turns:
+      {
+        "status": "complete",
+        "extractedProfile": {
+          "jobRoleFocus": "General role description (e.g. Platform Integration Developer, or Trainee)",
+          "experience": <numeric years of experience (number, e.g. 0 or 2, default to 0 if not specified or trainee)>,
+          "skills": "comma-separated list of technical skills (e.g. Java, Python, SQL, REST APIs)",
+          "projects": "Short description of project work, including problems solved and how they were solved",
+          "aiExperience": "Details on Cortex and AI experience (e.g. local RAG, no Cortex experience)"
+        },
+        "jobRole": "Developer" | "Architect" | "Lead",
+        "certificationLevel": "Beginner" | "Intermediate" | "Advanced"
+      }
+    `;
+
+    const response = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      temperature: 0.3,
+    });
+
+    const result = JSON.parse(response.choices[0].message.content.trim());
+    return result;
+  } catch (error) {
+    console.error('Error in runOnboardingChatLlm:', error);
+    return {
+      status: 'complete',
+      extractedProfile: {
+        jobRoleFocus: 'Platform Integration Developer',
+        experience: 2,
+        skills: 'Java, Python, REST APIs, Git',
+        projects: 'Backend integration and API service development',
+        aiExperience: 'Basic AI assistant integration and testing'
+      },
+      jobRole: 'Developer',
+      certificationLevel: 'Intermediate'
     };
   }
 };
