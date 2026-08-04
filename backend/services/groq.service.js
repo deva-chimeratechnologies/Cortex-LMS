@@ -503,7 +503,7 @@ export const generateGroqQuestions = async (profile, personaMarkdown, count) => 
 
     const data = JSON.parse(response.choices[0].message.content);
     const rawQuestions = data.questions || [];
-    return sanitizeDifyQuestions(rawQuestions);
+    return sanitizeDifyQuestions(rawQuestions, false);
   } catch (error) {
     console.error('Error generating Groq questions:', error);
     // Fallback to generating mock questions for the remaining balance to guarantee 20 questions
@@ -791,14 +791,14 @@ export const runOnboardingChatLlm = async (messages) => {
     return {
       status: 'complete',
       extractedProfile: {
-        jobRoleFocus: 'Platform Integration Developer',
-        experience: 2,
-        skills: 'Java, Python, REST APIs, Git',
-        projects: 'Backend integration and API service development',
-        aiExperience: 'Basic AI assistant integration and testing'
+        jobRoleFocus: 'Trainee',
+        experience: 0,
+        skills: 'None',
+        projects: 'None',
+        aiExperience: 'None'
       },
       jobRole: 'Developer',
-      certificationLevel: 'Intermediate'
+      certificationLevel: 'Beginner'
     };
   }
 };

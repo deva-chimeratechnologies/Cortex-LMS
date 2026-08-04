@@ -127,7 +127,7 @@ const AssessmentPage = () => {
       setMessages([
         {
           sender: 'ai',
-          text: `Hello! I am your AI Assessment Agent. I will configure your persona to generate a custom certification assessment for you.\n\nFirst, describe your daily focus or role and how many years of professional experience you have. (e.g., "I write backend code daily and have 3 years of experience" or "I am a trainee"):`,
+          text: `Hello! I am your AI Assessment Agent. I will configure your persona to generate a custom certification assessment for you.\n\nFirst, describe your daily focus or role and how many years of professional experience you have. (e.g., "I write backend code daily and have 3 years of experience"):`,
         },
       ]);
       setIsAgentTyping(false);
@@ -294,14 +294,14 @@ Ready to proceed to the exam rules review?`);
       }
     } catch (err) {
       console.error('Failed to analyze persona:', err);
-      const expYears = Number(profile.experience) || 2;
+      const expYears = Number(profile.experience) || 0;
       const fallbackLvl = expYears >= 5 ? 'Advanced' : (expYears >= 2 ? 'Intermediate' : 'Beginner');
       const finalProfile = {
         name: profile.name,
         employeeId: user?.employeeId || 'EMP-TEMP',
         department: user?.department || 'Engineering',
         jobRoleFocus: profile.jobRoleFocus || 'Platform Integration Developer',
-        experience: Number(profile.experience || 2),
+        experience: Number(profile.experience || 0),
         skills: profile.skills || 'Java, REST APIs, Docker',
         projects: profile.projects || 'Enterprise application integration',
         aiExperience: value,

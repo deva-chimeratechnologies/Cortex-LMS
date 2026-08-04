@@ -6,7 +6,7 @@ const DIFY_API_KEY = process.env.DIFY_API_KEY;
 /**
  * Clean and format Dify questions to match Mongoose schemas perfectly.
  */
-export const sanitizeDifyQuestions = (questions) => {
+export const sanitizeDifyQuestions = (questions, appendLabel = true) => {
   if (!Array.isArray(questions)) return [];
 
   return questions.map((q) => {
@@ -80,7 +80,7 @@ export const sanitizeDifyQuestions = (questions) => {
     }
 
     return {
-      text: q.text ? (q.text.includes('(Cortex documentation)') ? q.text : `${q.text} (Cortex documentation)`) : '',
+      text: q.text ? (appendLabel ? (q.text.includes('(Cortex documentation)') ? q.text : `${q.text} (Cortex documentation)`) : q.text) : '',
       type,
       options,
       correctAnswer,
